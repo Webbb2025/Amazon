@@ -2,7 +2,7 @@ name: Amazon Bot - Monitoreo Lotes
 
 on:
   schedule:
-    - cron: "*/5 * * * *"  # Cada 5 minutos
+    - cron: "*/5 * * * *"  # Se ejecuta cada 5 minutos
   workflow_dispatch:        # Permite ejecutarlo manualmente
 
 jobs:
@@ -11,16 +11,20 @@ jobs:
     timeout-minutes: 30     # Tiempo máximo para que el bot termine
 
     steps:
+      # Clonar repositorio
       - uses: actions/checkout@v3
 
+      # Configurar Python
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: 3.10
+          python-version: 3.10  # Versión estable y disponible
 
+      # Instalar dependencias
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
+      # Ejecutar bot
       - name: Ejecutar bot Amazon
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
