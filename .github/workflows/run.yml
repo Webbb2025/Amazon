@@ -2,13 +2,13 @@ name: Amazon Bot - Monitoreo Lotes
 
 on:
   schedule:
-    - cron: "*/5 * * * *"  # Se ejecuta cada 5 minutos
-  workflow_dispatch:        # Permite ejecutarlo manualmente
+    - cron: "*/5 * * * *"  # Ejecuta cada 5 minutos
+  workflow_dispatch:        # Permite ejecutar manualmente
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30     # Tiempo máximo para que el bot termine
+    timeout-minutes: 30     # Tiempo máximo de ejecución
 
     steps:
       # 1️⃣ Clonar repositorio
