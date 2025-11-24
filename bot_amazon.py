@@ -1,139 +1,74 @@
-import os
 import json
 import requests
-from bs4 import BeautifulSoup
-from time import sleep
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+TELEGRAM_TOKEN = "TU_TELEGRAM_TOKEN"
+CHAT_ID = "TU_CHAT_ID"
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Accept-Language": "es-ES,es;q=0.9"
-}
-
-BATCH_SIZE = 10  # Lotes de 10 productos
-
-# ---------------------------
-# Funciones
-# ---------------------------
-def scrape_amazon(url, retries=3):
-    for attempt in range(retries):
-        try:
-            r = requests.get(url, headers=HEADERS, timeout=10)
-            soup = BeautifulSoup(r.text, "html.parser")
-
-            titulo = soup.select_one("#productTitle")
-            titulo = titulo.text.strip() if titulo else "No disponible"
-
-            precio = soup.select_one("#priceblock_ourprice, #priceblock_dealprice, .a-price .a-offscreen")
-            precio_actual = precio.text.strip() if precio else "No disponible"
-
-            precio_ant = soup.select_one(".priceBlockStrikePriceString, .a-text-price .a-offscreen")
-            precio_anterior = precio_ant.text.strip() if precio_ant else "No disponible"
-
-            img = soup.select_one("#landingImage, #imgTagWrapperId img")
-            imagen_url = img.get("src") if img else None
-
-            return titulo, precio_actual, precio_anterior, img
-        except Exception as e:
-            print(f"[WARN] Error scrapeando {url}: {e}, intento {attempt+1}")
-            sleep(2)
-    return "Error", "Error", "Error", None
-
-def enviar_mensaje(texto):
+def send_to_telegram(message, image_url=None):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": CHAT_ID, "text": texto, "parse_mode": "Markdown"}
-    requests.post(url, data=data)
-
-def enviar_imagen(url_imagen, caption=None):
-    if not url_imagen:
-        return
-    api = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-    data = {"chat_id": CHAT_ID, "photo": url_imagen}
-    if caption:
-        data["caption"] = caption
-    requests.post(api, data=data)
-
-def cargar_precios():
-    if not os.path.exists("precios.json"):
-        return {}
-    with open("precios.json", "r") as f:
-        return json.load(f)
-
-def guardar_precios(precios):
-    with open("precios.json", "w") as f:
-        json.dump(precios, f, indent=4)
-
-# ---------------------------
-# Función para procesar lote
-# ---------------------------
-def procesar_lote(lote, precios_previos):
-    precios_actuales = {}
-    cambios = []
-
-    for producto in lote:
-        pid = producto["id"]
-        url = producto["url"]
-
-        titulo, precio_actual, precio_ant, imagen = scrape_amazon(url)
-        precios_actuales[pid] = precio_actual
-
-        precio_prev = precios_previos.get(pid)
-
-        mensaje = f"""
-📦 *Producto:* {titulo}
-
-🖼️ *Imagen*:  
-{imagen}
-
-💰 *Precio actual:* {precio_actual}
-✖️ *Precio anterior:* ~~{precio_ant}~~
-
-🔗 {url}
-"""
-        if precio_prev is None or precio_prev != precio_actual:
-            if precio_prev is not None:
-                enviar_mensaje("⚠️ *CAMBIO DE PRECIO DETECTADO* ⚠️")
-            enviar_mensaje(mensaje)
-            enviar_imagen(imagen)
-            cambios.append(titulo)
-            print(f"[INFO] Enviado: {titulo}")
-        else:
-            print(f"[INFO] Sin cambio: {titulo}")
-
-        sleep(1)  # evita bloqueo por Amazon
-
-    return precios_actuales, cambios
-
-# ---------------------------
-# Main
-# ---------------------------
-if __name__ == "__main__":
-    with open("productos.json", "r") as f:
-        productos = json.load(f)
-
-    precios_previos = cargar_precios()
-    todos_precios = {}
-    todos_cambios = []
-
-    # Dividir en lotes
-    for i in range(0, len(productos), BATCH_SIZE):
-        lote = productos[i:i+BATCH_SIZE]
-        precios_lote, cambios_lote = procesar_lote(lote, precios_previos)
-        todos_precios.update(precios_lote)
-        todos_cambios.extend(cambios_lote)
-        print(f"[INFO] Lote {i//BATCH_SIZE + 1} procesado")
-
-    # Guardar precios finales
-    guardar_precios(todos_precios)
-
-    # Resumen final
-    if todos_cambios:
-        resumen = f"✅ Cambios detectados en {len(todos_cambios)} productos:\n"
-        for t in todos_cambios:
-            resumen += f"• {t}\n"
-        enviar_mensaje(resumen)
-        print("[INFO] Resumen final enviado")
+    if image_url:
+        photo_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+        requests.post(photo_url, data={"chat_id": CHAT_ID, "photo": image_url, "caption": message, "parse_mode": "Markdown"})
     else:
-        print("[INFO] No se detectaron cambios de precio")
+        requests.post(url, data={"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"})
+
+def parse_products(file_path):
+    """Lee amazon.txt y devuelve lista de productos"""
+    products = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        lines = [line.strip() for line in f if line.strip()]
+    i = 0
+    while i < len(lines):
+        asin = lines[i]
+        title = lines[i+1]
+        image = lines[i+2]
+        price_line = lines[i+3]
+        prev_price_line = lines[i+4]
+        discount_line = lines[i+5]
+        url = lines[i+6]
+
+        price = price_line.replace("Precio:", "").replace("Euros", "").strip()
+        prev_price = prev_price_line.replace("Precio anterior:", "").replace("Euros", "").strip()
+        discount = discount_line.replace("Descuento:", "").strip()
+
+        products.append({
+            "asin": asin,
+            "title": title,
+            "image": image,
+            "price": price,
+            "prev_price": prev_price,
+            "discount": discount,
+            "url": url
+        })
+        i += 7
+    return products
+
+def main():
+    products = parse_products("amazon.txt")
+
+    # Guardamos el índice del último producto enviado
+    try:
+        with open("last_index.json", "r") as f:
+            data = json.load(f)
+            last_index = data.get("last_index", 0)
+    except FileNotFoundError:
+        last_index = 0
+
+    # Enviar el producto actual
+    product = products[last_index]
+    message = f"📦 *Producto:* {product['title']}\n" \
+              f"💰 *Precio actual:* {product['price']} €\n" \
+              f"💸 *Precio anterior:* {product['prev_price']} €\n" \
+              f"🔖 *Descuento:* {product['discount']}\n" \
+              f"🔗 {product['url']}"
+    
+    send_to_telegram(message, image_url=product['image'])
+    print(f"Enviado: {product['title']}")
+
+    # Actualizar índice
+    next_index = (last_index + 1) % len(products)
+    with open("last_index.json", "w") as f:
+        json.dump({"last_index": next_index}, f)
+
+if __name__ == "__main__":
+    main()
